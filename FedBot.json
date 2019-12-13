@@ -1,0 +1,150 @@
+{
+  "metadata": {
+    "schemaVersion": "1.0",
+    "importType": "LEX",
+    "importFormat": "JSON"
+  },
+  "resource": {
+    "name": "FedRates",
+    "version": "11",
+    "intents": [
+      {
+        "name": "Help",
+        "version": "4",
+        "fulfillmentActivity": {
+          "type": "ReturnIntent"
+        },
+        "sampleUtterances": [
+          "Help",
+          "help",
+          "help me",
+          "help me please",
+          "help please",
+          "I need help",
+          "I need help please"
+        ],
+        "slots": [],
+        "conclusionStatement": {
+          "messages": [
+            {
+              "groupNumber": 1,
+              "contentType": "PlainText",
+              "content": "RyanBot is happy to help. You can ask me for the effr, ioer, or sofr rates. Which rate would you like? And what date?"
+            }
+          ]
+        }
+      },
+      {
+        "name": "get_stuff",
+        "version": "13",
+        "fulfillmentActivity": {
+          "codeHook": {
+            "uri": "arn:aws:lambda:us-east-1:792124041533:function:Fed_Rates_SMS_Lookup",
+            "messageVersion": "1.0"
+          },
+          "type": "CodeHook"
+        },
+        "sampleUtterances": [
+          "I'd like the {short_code} rate for {my_date}",
+          "I'd like the {short_code} rate as of {my_date}",
+          "I would like the {short_code} rate for {my_date}",
+          "I would like the {short_code} rate as of {my_date}",
+          "Please give me the {short_code} rate as of {my_date}",
+          "Please give me the {short_code} rate for {my_date}",
+          "{short_code} for {my_date}",
+          "the {short_code} rate on {my_date}",
+          "{short_code} {my_date}",
+          "What is the {short_code} rate for {my_date}",
+          "Whats the {short_code} rate for {my_date}",
+          "{my_date} {short_code}"
+        ],
+        "slots": [
+          {
+            "sampleUtterances": [],
+            "slotType": "AMAZON.DATE",
+            "slotConstraint": "Required",
+            "valueElicitationPrompt": {
+              "messages": [
+                {
+                  "contentType": "PlainText",
+                  "content": "What date?"
+                }
+              ],
+              "maxAttempts": 2
+            },
+            "priority": 1,
+            "name": "my_date"
+          },
+          {
+            "sampleUtterances": [],
+            "slotType": "short_code",
+            "slotTypeVersion": "2",
+            "slotConstraint": "Required",
+            "valueElicitationPrompt": {
+              "messages": [
+                {
+                  "contentType": "PlainText",
+                  "content": " What rate?"
+                }
+              ],
+              "maxAttempts": 2
+            },
+            "priority": 2,
+            "name": "short_code"
+          }
+        ],
+        "dialogCodeHook": {
+          "uri": "arn:aws:lambda:us-east-1:792124041533:function:Fed_Rates_SMS_Lookup",
+          "messageVersion": "1.0"
+        }
+      }
+    ],
+    "slotTypes": [
+      {
+        "description": "Fed rate short code to pass in to the API",
+        "name": "short_code",
+        "version": "2",
+        "enumerationValues": [
+          {
+            "value": "IOER",
+            "synonyms": [
+              "ioer"
+            ]
+          },
+          {
+            "value": "PRIME",
+            "synonyms": [
+              "prime"
+            ]
+          },
+          {
+            "value": "EFFR",
+            "synonyms": [
+              "effr"
+            ]
+          },
+          {
+            "value": "SOFR",
+            "synonyms": [
+              "sofr"
+            ]
+          }
+        ],
+        "valueSelectionStrategy": "TOP_RESOLUTION"
+      }
+    ],
+    "voiceId": "0",
+    "childDirected": false,
+    "locale": "en-US",
+    "idleSessionTTLInSeconds": 60,
+    "abortStatement": {
+      "messages": [
+        {
+          "contentType": "PlainText",
+          "content": "I'm sorry, I don't know that rate. Please try another."
+        }
+      ]
+    },
+    "detectSentiment": false
+  }
+}
