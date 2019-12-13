@@ -1,0 +1,201 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov 29 22:26:16 2019
+
+@author: Ryan
+
+This code demonstrates an implementation of the Lex Code Hook Interface
+in order to serve a bot which gets various Federal Reserve Interest Rates.
+
+"""
+import time
+import datetime
+import os
+import logging
+import requests
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+fred_api_key = os.environ['FRED_API_KEY']
+
+""" --- Helpers to build responses which match the structure of the necessary DIALOG ACTIONS --- 
+There are 5 possible Dialog actions: Close, ConfirmIntent, Delegate, ElicitIntent, ElicitSlot"""
+
+
+def get_slots(intent_request):
+    """Function to get the current intent"""
+    return intent_request['currentIntent']['slots']
+
+
+def elicit_intent(session_attributes, intent_name, slots, slot_to_elicit, message):
+    """Not currently in use in this bot, but it's the function we WOULD use IF we wanted to change to a different intent"""
+    return {
+        'sessionAttributes': session_attributes,
+        'dialogAction': {
+            'type': 'ElicitSlot',
+            'intentName': intent_name,
+            'slots': slots,
+            'slotToElicit': slot_to_elicit,
+            'message': message
+        }
+    }
+
+
+def elicit_slot(session_attributes, intent_name, slots, slot_to_elicit, message):
+    """Function to remain in the current intent, but change to a different slot"""
+    return {
+        'sessionAttributes': session_attributes,
+        'dialogAction': {
+            'type': 'ElicitSlot',
+            'intentName': intent_name,
+            'slots': slots,
+            'slotToElicit': slot_to_elicit,
+            'message': message
+        }
+    }
+
+
+def close(session_attributes, fulfillment_state, message):
+    response = {
+        'sessionAttributes': session_attributes,
+        'dialogAction': {
+            'type': 'Close',
+            'fulfillmentState': fulfillment_state,
+            'message': message
+        }
+    }
+
+    return response
+
+
+def delegate(session_attributes, slots):
+    return {
+        'sessionAttributes': session_attributes,
+        'dialogAction': {
+            'type': 'Delegate',
+            'slots': slots
+        }
+    }
+
+
+""" --- Helper Functions --- """
+
+
+def build_validation_result(is_valid, violated_slot, message_content):
+    if message_content is None:
+        return {
+            "isValid": is_valid,
+            "violatedSlot": violated_slot,
+        }
+
+    return {
+        'isValid': is_valid,
+        'violatedSlot': violated_slot,
+        'message': {'contentType': 'PlainText', 'content': message_content}
+    }
+
+
+def is_date_valid(my_date):
+    try:
+        datetime.datetime.strptime(my_date, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+
+
+def short_code_to_rate(short_code, my_date):
+    """The function that makes a REST call to the FRED API to get the rate"""
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={short_code}&api_key={fred_api_key}&file_type=json&observation_start={my_date}&observation_end={my_date}&limit=1"
+    response = requests.get(url)
+    rate = (response.json()['observations'][0]['value'])
+    rate = str(rate)
+    return rate
+
+
+def validate_date_rate(my_date):
+    """Validate the date and the short code that the user requests"""
+
+    weekday_check = datetime.datetime.strptime(my_date, '%Y-%m-%d').weekday()
+    
+    if my_date is not None:
+        if not is_date_valid(my_date):
+            return build_validation_result(False, 'my_date', 'Sorry, thats not a valid date. Please try a different date.')
+        elif datetime.datetime.strptime(my_date, '%Y-%m-%d').date() > datetime.date.today():
+            return build_validation_result(False, 'my_date', 'I dont have a crystal ball. I cant tell a rate in the future. Please use a date in the past.')
+        elif weekday_check >4:
+            return build_validation_result(False, 'my_date', 'Sorry, thats a weekend date. Please use a weekday.')
+        
+        
+    return build_validation_result(True, None, None)
+
+
+""" --- Functions that control the bot's behavior --- """
+
+
+def get_rates(intent_request):
+    """Performs dialog management and fulfillment for getting fed rates
+    Beyond fulfillment, the implementation of this intent demonstrates the use of the elicitSlot dialog action
+    in slot validation and re-prompting."""
+
+    short_code = get_slots(intent_request)["short_code"]
+    my_date = get_slots(intent_request)["my_date"]
+    source = intent_request['invocationSource']
+
+    if source == 'DialogCodeHook':
+        # Perform basic validation on the supplied input slots.
+        # Use the elicitSlot dialog action to re-prompt for the first violation detected.
+        slots = get_slots(intent_request)
+
+        validation_result = validate_date_rate(my_date)
+        if not validation_result['isValid']:
+            slots[validation_result['violatedSlot']] = None
+            return elicit_slot(intent_request['sessionAttributes'],
+                               intent_request['currentIntent']['name'],
+                               slots,
+                               validation_result['violatedSlot'],
+                               validation_result['message'])
+
+        # Turn the rate into a session attribute. This isn't necessary, but could be useful if you wanted to develop the bot further.
+        output_session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+        if short_code is not None:
+            output_session_attributes['Rate'] = short_code_to_rate(short_code, my_date)
+
+        return delegate(output_session_attributes, get_slots(intent_request))
+
+    # return the rate, and rely on the goodbye message of the bot to define the message to the end user.
+    # This is where the call to FRED API gets executed.
+    return close(intent_request['sessionAttributes'],
+                 'Fulfilled',
+                 {'contentType': 'PlainText',
+                  'content': 'Thanks for texting RyanBot! The {} rate for {} is {}'.format(short_code, my_date, short_code_to_rate(short_code, my_date))})
+
+
+""" --- Intents --- """
+
+
+def dispatch(intent_request):
+    """Called when the user specifies an intent for this bot."""
+
+    logger.debug('dispatch userId={}, intentName={}'.format(intent_request['userId'], intent_request['currentIntent']['name']))
+
+    intent_name = intent_request['currentIntent']['name']
+
+    # Dispatch to your bot's intent handlers
+    if intent_name == 'get_stuff':
+        return get_rates(intent_request)
+
+    raise Exception('Intent with name ' + intent_name + ' not supported')
+
+
+""" --- Main handler --- """
+
+
+def lambda_handler(event, context):
+    """Route the incoming request based on intent.
+    The JSON body of the request is provided in the event slot.
+    By default, treat the user request as coming from the America/Chicago time zone."""
+    os.environ['TZ'] = 'America/Chicago'
+    time.tzset()
+    logger.debug('event.bot.name={}'.format(event['bot']['name']))
+
+    return dispatch(event)
